@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "super-debugger": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["server.py"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
