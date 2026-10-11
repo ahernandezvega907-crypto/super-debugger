@@ -66,8 +66,8 @@ uv venv --python 3.12
 # En macOS/Linux:
 source .venv/bin/activate
 
-# 4. Instalar dependencias
-uv add fastmcp
+# 4. Instalar dependencias (desde pyproject.toml)
+uv sync
 
 # 5. Verificar que el servidor carga
 python -c "from server import mcp; print('OK')"
@@ -93,7 +93,7 @@ Agrega este bloque:
 {
   "mcpServers": {
     "super-debugger": {
-      "command": "python",
+      "command": "/ruta/absoluta/a/super-debugger/.venv/Scripts/python.exe",
       "args": ["/ruta/absoluta/a/super-debugger/server.py"]
     }
   }
@@ -101,8 +101,10 @@ Agrega este bloque:
 ```
 
 ⚠️ **Reemplaza la ruta** con la ubicación real donde clonaste el repo:
-- **Windows:** `C:\\Users\\TuUsuario\\super-debugger\\server.py`
-- **macOS/Linux:** `/Users/TuUsuario/super-debugger/server.py`
+- **Windows:** `C:\\Users\\TuUsuario\\super-debugger\\.venv\\Scripts\\python.exe` y `C:\\Users\\TuUsuario\\super-debugger\\server.py`
+- **macOS/Linux:** `/Users/TuUsuario/super-debugger/.venv/bin/python` y `/Users/TuUsuario/super-debugger/server.py`
+
+**Importante:** apunta al `python` del `.venv` (no al global) para que el servidor encuentre `fastmcp`.
 
 Reinicia Claude Desktop. Verás el ícono 🔌 en el chat.
 
@@ -114,30 +116,83 @@ Edita `~/.cursor/mcp.json` (o `%USERPROFILE%\.cursor\mcp.json` en Windows):
 {
   "mcpServers": {
     "super-debugger": {
-      "command": "python",
+      "command": "/ruta/absoluta/a/super-debugger/.venv/Scripts/python.exe",
       "args": ["/ruta/absoluta/a/super-debugger/server.py"]
     }
   }
 }
 ```
 
-⚠️ **Reemplaza la ruta** con la ubicación real donde clonaste el repo:
-- **Windows:** `C:\\Users\\TuUsuario\\super-debugger\\server.py`
-- **macOS/Linux:** `/Users/TuUsuario/super-debugger/server.py`
+⚠️ **Reemplaza la ruta** con la ubicación real donde clonaste el repo (mismas rutas que en Claude Desktop).
 
 Reinicia Cursor y verás el servidor disponible en el chat.
 
 ### Opción 3: Cline (VS Code)
 
-Instala la extensión **Cline** desde el Marketplace y agrega el servidor desde su panel de configuración MCP.
+1. Instala la extensión **Cline** desde el Marketplace.
+2. Abre el panel de Cline → **MCP Servers** → **Installed** → **Configure MCP Servers**.
+3. Agrega este bloque en `cline_mcp_settings.json`:
 
-### Opción 4: MCP Inspector (para probar sin IDE)
+```json
+{
+  "mcpServers": {
+    "super-debugger": {
+      "command": "C:\\Users\\TuUsuario\\super-debugger\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\Users\\TuUsuario\\super-debugger\\server.py"],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+### Opción 4: Continue
+
+1. Instala la extensión **Continue** desde el Marketplace.
+2. Abre `~/.continue/config.yaml` (o `%USERPROFILE%\.continue\config.yaml` en Windows).
+3. Agrega este bloque al final del archivo:
+
+```yaml
+mcpServers:
+  - name: super-debugger
+    command: "C:\\Users\\TuUsuario\\super-debugger\\.venv\\Scripts\\python.exe"
+    args:
+      - "C:\\Users\\TuUsuario\\super-debugger\\server.py"
+    connectionTimeout: 120000
+```
+
+**Nota:** el `connectionTimeout: 120000` es obligatorio — FastMCP tarda más que el timeout por defecto en arrancar.
+
+### Opción 5: MCP Inspector (para probar sin IDE)
 
 ```bash
 npx -y @modelcontextprotocol/inspector python server.py
 ```
 
 Abre `http://localhost:5173` en el navegador.
+
+---
+
+## ✅ Clientes validados
+
+Ciclo completo de depuración (run → continue → inspeccionar variables → stop) probado end-to-end con:
+
+| Cliente | Estado | Notas |
+| :--- | :--- | :--- |
+| MCP Inspector (oficial Anthropic) | ✅ Probado | Referencia protocol-level |
+| Claude Desktop | ✅ Probado | Funciona out-of-the-box |
+| VS Code + GitHub Copilot Chat | ✅ Probado | `mcp.json` debe apuntar al `.venv` |
+| Cline | ✅ Probado | Requiere prompts explícitos con modelos gratuitos |
+| Continue | ✅ Probado | Requiere `connectionTimeout: 120000` y prompts explícitos |
+| Cursor | ⏳ No probado | Compatible con MCP, pendiente de verificar |
+
+Ver [`VALIDATION.md`](VALIDATION.md) para los detalles técnicos, versiones de modelos y notas específicas de cada cliente.
+
+**Nota sobre modelos gratuitos:** los modelos con soporte limitado de tool calling (ej. Gemini Flash Lite, Pixel Canary) requieren prompts explícitos del tipo:
+
+> *"Usá EXCLUSIVAMENTE la herramienta MCP `debug_run` del servidor `super-debugger`, sin ejecutar comandos de terminal."*
+
+Con esa instrucción, el tool calling funciona correctamente en todos los clientes probados.
 
 ---
 
@@ -172,7 +227,7 @@ def promedio_positivos(numeros):
 ## 🏗️ Arquitectura
 
 ```
-Cliente MCP (Claude/Cursor/Cline)
+Cliente MCP (Claude/Cursor/Cline/Continue)
         │ stdio (JSON-RPC)
         ▼
 ┌─────────────────────────┐
@@ -221,9 +276,18 @@ super-debugger/
 ├── agent.py               # (opcional) Agente autónomo con LangGraph
 │                          #   requiere ANTHROPIC_API_KEY (no incluido en el MVP)
 ├── test_*.py              # Tests
+├── VALIDATION.md          # Evidencia de validación multi-cliente
 ├── pyproject.toml         # Dependencias
 └── README.md              # Este archivo
 ```
+
+### Dependencias
+
+El proyecto usa **solo 3 dependencias runtime**:
+
+- `fastmcp` — framework del servidor MCP
+- `langgraph` — orquestación del agente autónomo (`agent.py`)
+- `langchain-anthropic` — cliente de Claude para el agente
 
 ### Agregar nuevas herramientas
 
@@ -237,6 +301,8 @@ super-debugger/
 
 - [x] MVP: 9 herramientas core
 - [x] Compatibilidad con MCP Inspector
+- [x] Validación end-to-end con 5 clientes (MCP Inspector, Claude Desktop, Copilot, Cline, Continue)
+- [ ] Validación con Cursor
 - [ ] Soporte para breakpoints condicionales
 - [ ] Soporte para debugging multi-hilo
 - [ ] Publicación en VS Code Marketplace

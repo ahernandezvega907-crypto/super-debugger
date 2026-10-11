@@ -2,7 +2,7 @@
   "servers": {
     "super-debugger": {
       "type": "stdio",
-      "command": "python",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
       "args": ["server.py"],
       "cwd": "${workspaceFolder}"
     }
